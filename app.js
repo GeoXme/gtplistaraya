@@ -138,8 +138,8 @@ function calculatePeriod(fechaPagoStr) {
     const date = new Date(fechaPagoStr + 'T00:00:00');
     const endDateStr = formatDateDMY(fechaPagoStr);
 
-    // Subtract 7 days
-    date.setDate(date.getDate() - 7);
+    // Subtract 6 days
+    date.setDate(date.getDate() - 6);
 
     const startYear = date.getFullYear();
     const startMonth = String(date.getMonth() + 1).padStart(2, '0');
