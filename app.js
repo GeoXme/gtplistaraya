@@ -151,7 +151,37 @@ function calculatePeriod(fechaPagoStr) {
 
 // Local Database State
 const DB = {
-    getCompany: function () {
+    getCompany: async function() {
+        if (supabaseClient) {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('company')
+                    .select('*')
+                    .eq('id', 1)
+                    .single();
+                if (error) {
+                    if (error.code === 'PGRST116') {
+                        return this.getLocalCompany();
+                    }
+                    throw error;
+                }
+                return {
+                    name: data.name,
+                    businessName: data.business_name,
+                    address: data.address,
+                    rfc: data.rfc,
+                    employerRegistry: data.employer_registry,
+                    regime: data.regime,
+                    logo: data.logo || ""
+                };
+            } catch (err) {
+                console.error("Error fetching company from Supabase:", err);
+                return this.getLocalCompany();
+            }
+        }
+        return this.getLocalCompany();
+    },
+    getLocalCompany: function() {
         const defaultCompany = {
             name: "MI EMPRESA S.A. DE C.V.",
             businessName: "MI EMPRESA RAZON SOCIAL",
@@ -164,26 +194,201 @@ const DB = {
         const saved = localStorage.getItem('cfdi_company');
         return saved ? JSON.parse(saved) : defaultCompany;
     },
-    saveCompany: function (company) {
+    saveCompany: async function(company) {
+        this.saveLocalCompany(company); // Backup locally
+        if (supabaseClient) {
+            try {
+                const { error } = await supabaseClient
+                    .from('company')
+                    .upsert({
+                        id: 1,
+                        name: company.name,
+                        business_name: company.businessName,
+                        address: company.address,
+                        rfc: company.rfc,
+                        employer_registry: company.employerRegistry,
+                        regime: company.regime,
+                        logo: company.logo
+                    });
+                if (error) throw error;
+            } catch (err) {
+                console.error("Error saving company to Supabase:", err);
+                showToast("Error Supabase", "No se pudieron subir los datos de la empresa.", "danger");
+            }
+        }
+    },
+    saveLocalCompany: function(company) {
         localStorage.setItem('cfdi_company', JSON.stringify(company));
     },
-    getEmployees: function () {
+    getEmployees: async function() {
+        if (supabaseClient) {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('employees')
+                    .select('*')
+                    .order('no', { ascending: true });
+                if (error) throw error;
+                return data.map(emp => ({
+                    no: emp.no,
+                    control: emp.control,
+                    name: emp.name,
+                    curp: emp.curp,
+                    rfc: emp.rfc,
+                    imss: emp.imss,
+                    depto: emp.depto,
+                    puesto: emp.puesto,
+                    ingreso: emp.ingreso,
+                    sueldo: Number(emp.sueldo),
+                    sDiario: Number(emp.s_diario),
+                    status: emp.status
+                }));
+            } catch (err) {
+                console.error("Error fetching employees from Supabase:", err);
+                return this.getLocalEmployees();
+            }
+        }
+        return this.getLocalEmployees();
+    },
+    getLocalEmployees: function() {
         const saved = localStorage.getItem('cfdi_employees');
         return saved ? JSON.parse(saved) : [];
     },
-    saveEmployees: function (employees) {
+    saveEmployees: async function(employees) {
+        this.saveLocalEmployees(employees); // Backup locally
+        if (supabaseClient) {
+            try {
+                const mapped = employees.map(emp => ({
+                    no: emp.no,
+                    control: emp.control,
+                    name: emp.name,
+                    curp: emp.curp,
+                    rfc: emp.rfc,
+                    imss: emp.imss,
+                    depto: emp.depto,
+                    puesto: emp.puesto,
+                    ingreso: emp.ingreso,
+                    sueldo: emp.sueldo,
+                    s_diario: emp.sDiario,
+                    status: emp.status
+                }));
+                const { error } = await supabaseClient
+                    .from('employees')
+                    .upsert(mapped);
+                if (error) throw error;
+            } catch (err) {
+                console.error("Error saving employees to Supabase:", err);
+                showToast("Error Supabase", "No se pudieron sincronizar los empleados.", "danger");
+            }
+        }
+    },
+    saveLocalEmployees: function(employees) {
         localStorage.setItem('cfdi_employees', JSON.stringify(employees));
     },
-    getPayrolls: function () {
+    getPayrolls: async function() {
+        if (supabaseClient) {
+            try {
+                const { data: batches, error: batchErr } = await supabaseClient
+                    .from('payrolls')
+                    .select('*')
+                    .order('created_at', { ascending: true });
+                if (batchErr) throw batchErr;
+
+                const { data: items, error: itemsErr } = await supabaseClient
+                    .from('payroll_items')
+                    .select('*');
+                if (itemsErr) throw itemsErr;
+
+                return batches.map(b => {
+                    const bItems = items.filter(item => item.payroll_id === b.id).map(item => ({
+                        no: item.no,
+                        control: item.control,
+                        name: item.name,
+                        rfc: item.rfc,
+                        curp: item.curp,
+                        imss: item.imss,
+                        depto: item.depto,
+                        puesto: item.puesto,
+                        ingreso: item.ingreso,
+                        diasTrab: Number(item.dias_trab),
+                        sueldo: Number(item.sueldo),
+                        sDiario: Number(item.s_diario),
+                        pago: Number(item.pago),
+                        fechaPago: item.fecha_pago,
+                        periodo: item.periodo,
+                        folioCFDI: item.folio_cfdi
+                    }));
+                    return {
+                        id: b.id,
+                        fechaPago: b.fecha_pago,
+                        periodo: b.periodo,
+                        createdAt: b.created_at,
+                        items: bItems
+                    };
+                });
+            } catch (err) {
+                console.error("Error fetching payrolls from Supabase:", err);
+                return this.getLocalPayrolls();
+            }
+        }
+        return this.getLocalPayrolls();
+    },
+    getLocalPayrolls: function() {
         const saved = localStorage.getItem('cfdi_payrolls');
         return saved ? JSON.parse(saved) : [];
     },
-    savePayrolls: function (payrolls) {
+    savePayrolls: async function(payrolls) {
+        this.saveLocalPayrolls(payrolls); // Backup locally
+        if (supabaseClient) {
+            try {
+                for (const batch of payrolls) {
+                    const { error: pErr } = await supabaseClient
+                        .from('payrolls')
+                        .upsert({
+                            id: batch.id,
+                            fecha_pago: batch.fechaPago,
+                            periodo: batch.periodo,
+                            created_at: batch.createdAt
+                        });
+                    if (pErr) throw pErr;
+
+                    const mappedItems = batch.items.map(item => ({
+                        payroll_id: batch.id,
+                        no: item.no,
+                        control: item.control,
+                        name: item.name,
+                        rfc: item.rfc,
+                        curp: item.curp,
+                        imss: item.imss,
+                        depto: item.depto,
+                        puesto: item.puesto,
+                        ingreso: item.ingreso,
+                        dias_trab: item.diasTrab,
+                        sueldo: item.sueldo,
+                        s_diario: item.sDiario,
+                        pago: item.pago,
+                        fecha_pago: item.fechaPago,
+                        periodo: item.periodo,
+                        folio_cfdi: item.folioCFDI
+                    }));
+
+                    const { error: itemErr } = await supabaseClient
+                        .from('payroll_items')
+                        .upsert(mappedItems, { onConflict: 'folio_cfdi' });
+                    if (itemErr) throw itemErr;
+                }
+            } catch (err) {
+                console.error("Error saving payrolls to Supabase:", err);
+                showToast("Error Supabase", "No se pudieron sincronizar los recibos de nómina.", "danger");
+            }
+        }
+    },
+    saveLocalPayrolls: function(payrolls) {
         localStorage.setItem('cfdi_payrolls', JSON.stringify(payrolls));
     }
 };
 
 // State Manager
+let supabaseClient = null;
 let currentEmployees = [];
 let currentCompany = {};
 let currentPayrolls = [];
@@ -204,7 +409,7 @@ function showToast(title, desc, type = 'success') {
 
 // Render Company Details in Header
 function renderCompanyHeader() {
-    currentCompany = DB.getCompany();
+    // Uses currentCompany global cache
     document.getElementById('display-company-name').textContent = currentCompany.name;
     document.getElementById('display-business-name').textContent = currentCompany.businessName;
     document.getElementById('display-address').textContent = currentCompany.address;
@@ -252,12 +457,11 @@ function initRouter() {
 let editingEmployeeId = null; // null means adding new
 
 function initEmployeeCRUD() {
-    currentEmployees = DB.getEmployees();
     renderEmployeesTable(currentEmployees);
 
     // Edit Company modal opening
     document.getElementById('btn-edit-company').addEventListener('click', () => {
-        const company = DB.getCompany();
+        const company = currentCompany;
         document.getElementById('comp-name').value = company.name;
         document.getElementById('comp-business').value = company.businessName;
         document.getElementById('comp-address').value = company.address;
@@ -272,8 +476,8 @@ function initEmployeeCRUD() {
     document.getElementById('form-company').addEventListener('submit', (e) => {
         e.preventDefault();
         const fileInput = document.getElementById('comp-logo');
-        const saveCompanyData = (logoBase64) => {
-            const current = DB.getCompany();
+        const saveCompanyData = async (logoBase64) => {
+            const current = currentCompany;
             const updated = {
                 name: document.getElementById('comp-name').value.trim().toUpperCase(),
                 businessName: document.getElementById('comp-business').value.trim().toUpperCase(),
@@ -284,7 +488,8 @@ function initEmployeeCRUD() {
                 logo: logoBase64 !== undefined ? logoBase64 : current.logo
             };
 
-            DB.saveCompany(updated);
+            await DB.saveCompany(updated);
+            currentCompany = updated;
             renderCompanyHeader();
             closeModal('modal-company');
             showToast("Empresa Guardada", "Los datos de la empresa se actualizaron correctamente.");
@@ -326,7 +531,7 @@ function initEmployeeCRUD() {
     });
 
     // Employee Form Submission
-    document.getElementById('form-employee').addEventListener('submit', (e) => {
+    document.getElementById('form-employee').addEventListener('submit', async (e) => {
         e.preventDefault();
 
         const control = parseInt(document.getElementById('emp-control').value);
@@ -397,7 +602,7 @@ function initEmployeeCRUD() {
             }
         }
 
-        DB.saveEmployees(currentEmployees);
+        await DB.saveEmployees(currentEmployees);
         renderEmployeesTable(currentEmployees);
         closeModal('modal-employee');
     });
@@ -457,7 +662,7 @@ function initEmployeeCRUD() {
         if (!file) return;
 
         const reader = new FileReader();
-        reader.onload = function (evt) {
+        reader.onload = async function (evt) {
             try {
                 const data = new Uint8Array(evt.target.result);
                 const workbook = XLSX.read(data, { type: 'array' });
@@ -565,7 +770,7 @@ function initEmployeeCRUD() {
                     }
                 });
 
-                DB.saveEmployees(currentEmployees);
+                await DB.saveEmployees(currentEmployees);
                 renderEmployeesTable(currentEmployees);
                 showToast("Importación Completa", `Se importaron/actualizaron ${importedCount} trabajadores. Fila(s) ignorada(s) por datos inválidos: ${errorCount}.`);
 
@@ -642,10 +847,22 @@ window.editEmployee = function (no) {
     openModal('modal-employee');
 };
 
-window.deleteEmployee = function (no) {
+window.deleteEmployee = async function (no) {
     if (confirm(`¿Estás seguro de que deseas eliminar al empleado No. ${no}?`)) {
         currentEmployees = currentEmployees.filter(emp => emp.no !== no);
-        DB.saveEmployees(currentEmployees);
+        if (supabaseClient) {
+            try {
+                const { error } = await supabaseClient
+                    .from('employees')
+                    .delete()
+                    .eq('no', no);
+                if (error) throw error;
+            } catch (err) {
+                console.error("Error deleting employee from Supabase:", err);
+                showToast("Error Supabase", "No se pudo eliminar el empleado de la base de datos remota.", "danger");
+            }
+        }
+        await DB.saveEmployees(currentEmployees);
         renderEmployeesTable(currentEmployees);
         showToast("Empleado Eliminado", "El empleado ha sido removido del catálogo.", "danger");
     }
@@ -662,14 +879,14 @@ function initPayrollPage() {
     dateInput.value = `${yyyy}-${mm}-${dd}`;
 
     // Handle "Nueva lista de raya" click
-    document.getElementById('btn-new-payroll').addEventListener('click', () => {
+    document.getElementById('btn-new-payroll').addEventListener('click', async () => {
         const selectedDate = dateInput.value;
         if (!selectedDate) {
             alert("Por favor selecciona una fecha de pago.");
             return;
         }
 
-        currentEmployees = DB.getEmployees();
+        currentEmployees = await DB.getEmployees();
         // Filter active employees
         const activeEmployees = currentEmployees.filter(emp => emp.status === true);
 
@@ -749,7 +966,7 @@ function initPayrollPage() {
     });
 
     // Guardar Lista de Raya Button
-    document.getElementById('btn-save-payroll').addEventListener('click', () => {
+    document.getElementById('btn-save-payroll').addEventListener('click', async () => {
         if (activePayrollList.length === 0) {
             alert("No hay datos en la lista de raya para guardar.");
             return;
@@ -775,7 +992,7 @@ function initPayrollPage() {
         }
 
         // Save to DB
-        currentPayrolls = DB.getPayrolls();
+        currentPayrolls = await DB.getPayrolls();
 
         // Generate a payroll batch header
         const payrollBatch = {
@@ -788,7 +1005,7 @@ function initPayrollPage() {
 
         activePayrollList = selectedItems;
         currentPayrolls.push(payrollBatch);
-        DB.savePayrolls(currentPayrolls);
+        await DB.savePayrolls(currentPayrolls);
 
         // Update Period dropdown on Search Page
         populatePeriodsDropdown();
@@ -902,10 +1119,10 @@ function initSearchPage() {
 
 function populatePeriodsDropdown() {
     const select = document.getElementById('search-period-select');
+    if (!select) return;
     // Clear everything except first option
     select.innerHTML = '<option value="">-- Selecciona un periodo --</option>';
 
-    currentPayrolls = DB.getPayrolls();
     const periods = new Set();
 
     currentPayrolls.forEach(batch => {
@@ -925,7 +1142,6 @@ function populatePeriodsDropdown() {
 
 // Perform search for single FolioCFDI
 function performFolioSearch(folio) {
-    currentPayrolls = DB.getPayrolls();
     let foundItem = null;
 
     for (const batch of currentPayrolls) {
@@ -1017,7 +1233,6 @@ function renderFolioModalDetails(item) {
 
 // Perform search for RFC
 function performRfcSearch(rfc) {
-    currentPayrolls = DB.getPayrolls();
     const results = [];
 
     currentPayrolls.forEach(batch => {
@@ -1067,7 +1282,6 @@ function performRfcSearch(rfc) {
 
 // Perform search for Period
 function performPeriodSearch(period) {
-    currentPayrolls = DB.getPayrolls();
     const results = [];
 
     currentPayrolls.forEach(batch => {
@@ -1118,7 +1332,7 @@ function performPeriodSearch(period) {
 
 // Renders the receipt HTML template to an element
 function renderReceiptHTML(item, containerId) {
-    const company = DB.getCompany();
+    const company = currentCompany;
     const container = document.getElementById(containerId);
     container.innerHTML = '';
 
@@ -1321,7 +1535,6 @@ function renderReceiptHTML(item, containerId) {
 
 // Print single receipt
 window.printSingleReceipt = function (folio) {
-    currentPayrolls = DB.getPayrolls();
     let foundItem = null;
 
     for (const batch of currentPayrolls) {
@@ -1409,19 +1622,247 @@ function processUrlParams() {
 }
 
 // --- INITIALIZATION ---
-document.addEventListener('DOMContentLoaded', () => {
-    // Render Header
+async function refreshAllData() {
+    currentCompany = await DB.getCompany();
+    currentEmployees = await DB.getEmployees();
+    currentPayrolls = await DB.getPayrolls();
+}
+
+async function initSupabaseConnection() {
+    const url = localStorage.getItem('supabase_url');
+    const key = localStorage.getItem('supabase_key');
+    const indicator = document.getElementById('db-status-indicator');
+
+    if (url && key) {
+        try {
+            supabaseClient = supabase.createClient(url, key);
+            // Test query
+            const { data, error } = await supabaseClient.from('company').select('id').limit(1);
+            if (error && error.code !== 'PGRST116' && error.message !== 'relation "company" does not exist') {
+                throw error;
+            }
+            if (indicator) {
+                indicator.textContent = 'EN LÍNEA';
+                indicator.className = 'db-status-badge status-online';
+            }
+            return true;
+        } catch (err) {
+            console.error("Failed to connect to Supabase, falling back to local mode:", err);
+            supabaseClient = null;
+            if (indicator) {
+                indicator.textContent = 'MODO LOCAL';
+                indicator.className = 'db-status-badge status-local';
+            }
+            return false;
+        }
+    } else {
+        supabaseClient = null;
+        if (indicator) {
+            indicator.textContent = 'MODO LOCAL';
+            indicator.className = 'db-status-badge status-local';
+        }
+        return false;
+    }
+}
+
+function initSupabaseSettings() {
+    const configBtn = document.getElementById('btn-supabase-config');
+    const modal = document.getElementById('modal-supabase');
+    const form = document.getElementById('form-supabase');
+    const urlInput = document.getElementById('sb-url');
+    const keyInput = document.getElementById('sb-key');
+    const statusText = document.getElementById('sb-connection-status');
+    const testBtn = document.getElementById('btn-test-sb');
+    const syncSection = document.getElementById('sb-sync-section');
+    const syncBtn = document.getElementById('btn-sync-to-sb');
+    const clearBtn = document.getElementById('btn-clear-sb');
+
+    // Load initial values from localStorage
+    const savedUrl = localStorage.getItem('supabase_url') || '';
+    const savedKey = localStorage.getItem('supabase_key') || '';
+    if (urlInput) urlInput.value = savedUrl;
+    if (keyInput) keyInput.value = savedKey;
+
+    function updateModalUI() {
+        if (supabaseClient) {
+            if (statusText) {
+                statusText.textContent = "Conectado (En Línea)";
+                statusText.style.color = "var(--success)";
+            }
+            if (syncSection) syncSection.style.display = "block";
+            if (clearBtn) clearBtn.style.display = "inline-block";
+        } else {
+            if (statusText) {
+                statusText.textContent = "Sin configurar (Modo Local)";
+                statusText.style.color = "var(--text-muted)";
+            }
+            if (syncSection) syncSection.style.display = "none";
+            if (clearBtn) clearBtn.style.display = "none";
+        }
+    }
+
+    if (configBtn) {
+        configBtn.addEventListener('click', () => {
+            updateModalUI();
+            openModal('modal-supabase');
+        });
+    }
+
+    if (testBtn) {
+        testBtn.addEventListener('click', async () => {
+            const url = urlInput.value.trim();
+            const key = keyInput.value.trim();
+
+            if (!url || !key) {
+                alert("Por favor introduce la URL y la Anon Key.");
+                return;
+            }
+
+            testBtn.disabled = true;
+            testBtn.textContent = "Probando...";
+            if (statusText) {
+                statusText.textContent = "Probando conexión...";
+                statusText.style.color = "var(--text-muted)";
+            }
+
+            try {
+                const tempClient = supabase.createClient(url, key);
+                const { error } = await tempClient.from('company').select('id').limit(1);
+                if (error && error.code !== 'PGRST116' && error.message !== 'relation "company" does not exist') {
+                    throw error;
+                }
+
+                if (statusText) {
+                    statusText.textContent = "Conexión Exitosa!";
+                    statusText.style.color = "var(--success)";
+                }
+                showToast("Conexión Exitosa", "Se pudo establecer conexión con Supabase correctamente.");
+            } catch (err) {
+                console.error("Test connection error:", err);
+                if (statusText) {
+                    statusText.textContent = "Error de Conexión";
+                    statusText.style.color = "var(--danger)";
+                }
+                showToast("Error de Conexión", "No se pudo conectar a Supabase. Verifica tus credenciales.", "danger");
+            } finally {
+                testBtn.disabled = false;
+                testBtn.textContent = "Probar Conexión";
+            }
+        });
+    }
+
+    if (form) {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const url = urlInput.value.trim();
+            const key = keyInput.value.trim();
+
+            localStorage.setItem('supabase_url', url);
+            localStorage.setItem('supabase_key', key);
+
+            const ok = await initSupabaseConnection();
+            if (ok) {
+                showToast("Credenciales Guardadas", "El sistema ahora opera En Línea.");
+                await refreshAllData();
+                renderCompanyHeader();
+                renderEmployeesTable(currentEmployees);
+                populatePeriodsDropdown();
+            } else {
+                showToast("Error al Conectar", "Se guardaron las credenciales pero falló la conexión. El sistema operará en Modo Local.", "warning");
+            }
+            updateModalUI();
+            closeModal('modal-supabase');
+        });
+    }
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', async () => {
+            if (confirm("¿Estás seguro de que deseas eliminar las credenciales de Supabase? El sistema volverá a Modo Local.")) {
+                localStorage.removeItem('supabase_url');
+                localStorage.removeItem('supabase_key');
+                if (urlInput) urlInput.value = '';
+                if (keyInput) keyInput.value = '';
+                
+                await initSupabaseConnection();
+                await refreshAllData();
+                renderCompanyHeader();
+                renderEmployeesTable(currentEmployees);
+                populatePeriodsDropdown();
+                
+                updateModalUI();
+                closeModal('modal-supabase');
+                showToast("Credenciales Eliminadas", "El sistema ha regresado a Modo Local.");
+            }
+        });
+    }
+
+    if (syncBtn) {
+        syncBtn.addEventListener('click', async () => {
+            if (!supabaseClient) {
+                alert("Debes estar conectado a Supabase para realizar la migración.");
+                return;
+            }
+
+            if (!confirm("Esta acción migrará tus datos de LocalStorage (Empresa, Empleados e Histórico de Nóminas) a tu base de datos remota de Supabase. Los registros con el mismo identificador serán actualizados. ¿Deseas continuar?")) {
+                return;
+            }
+
+            syncBtn.disabled = true;
+            syncBtn.textContent = "Migrando datos...";
+
+            try {
+                // 1. Migrate Company
+                const localComp = DB.getLocalCompany();
+                await DB.saveCompany(localComp);
+
+                // 2. Migrate Employees
+                const localEmps = DB.getLocalEmployees();
+                if (localEmps.length > 0) {
+                    await DB.saveEmployees(localEmps);
+                }
+
+                // 3. Migrate Payrolls
+                const localPayrolls = DB.getLocalPayrolls();
+                if (localPayrolls.length > 0) {
+                    await DB.savePayrolls(localPayrolls);
+                }
+
+                showToast("Migración Completada", "Todos los datos locales se han subido con éxito a Supabase.");
+                
+                await refreshAllData();
+                renderCompanyHeader();
+                renderEmployeesTable(currentEmployees);
+                populatePeriodsDropdown();
+
+                closeModal('modal-supabase');
+            } catch (err) {
+                console.error("Migration error:", err);
+                showToast("Error de Migración", "Hubo un error al migrar los datos a Supabase.", "danger");
+            } finally {
+                syncBtn.disabled = false;
+                syncBtn.textContent = "📤 Migrar Datos Locales a Supabase";
+            }
+        });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    // 1. Initialize connection
+    await initSupabaseConnection();
+
+    // 2. Refresh caches
+    await refreshAllData();
+
+    // 3. Render initial views
     renderCompanyHeader();
 
-    // Init navigation tabs
+    // Init router and elements
     initRouter();
-
-    // Init individual page components
     initEmployeeCRUD();
     initPayrollPage();
     initSearchPage();
+    initSupabaseSettings();
 
-    // Process URL params (?folio=...)
     processUrlParams();
 });
 

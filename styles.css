@@ -427,6 +427,30 @@ body {
     color: var(--danger);
 }
 
+/* Database status badge in header */
+.db-status-badge {
+    display: inline-flex;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border: 1px solid transparent;
+}
+
+.db-status-badge.status-local {
+    background-color: var(--border-light);
+    color: var(--text-muted);
+    border-color: var(--border);
+}
+
+.db-status-badge.status-online {
+    background-color: var(--success-light);
+    color: var(--success);
+    border-color: var(--success);
+}
+
 /* Modals */
 .modal-backdrop {
     position: fixed;
