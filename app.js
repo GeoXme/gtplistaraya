@@ -1629,8 +1629,10 @@ async function refreshAllData() {
 }
 
 async function initSupabaseConnection() {
-    const url = localStorage.getItem('supabase_url');
-    const key = localStorage.getItem('supabase_key');
+    const url ="https://rllxunggbqkqlrpyjzbr.supabase.co";
+    const key ="sb_publishable_bJIadHgZj2SK2tKhxlXbwg_QiThH1FY";
+    //const url = localStorage.getItem('supabase_url');
+    //const key = localStorage.getItem('supabase_key');
     const indicator = document.getElementById('db-status-indicator');
 
     if (url && key) {
