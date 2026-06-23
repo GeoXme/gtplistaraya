@@ -1754,11 +1754,13 @@ function initSupabaseSettings() {
     if (form) {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const url = urlInput.value.trim();
-            const key = keyInput.value.trim();
+            const url ="https://rllxunggbqkqlrpyjzbr.supabase.co";
+            const key ="sb_publishable_bJIadHgZj2SK2tKhxlXbwg_QiThH1FY";
+            //const url = urlInput.value.trim();
+            //const key = keyInput.value.trim();
 
-            localStorage.setItem('supabase_url', url);
-            localStorage.setItem('supabase_key', key);
+            //localStorage.setItem('supabase_url', url);
+           // localStorage.setItem('supabase_key', key);
 
             const ok = await initSupabaseConnection();
             if (ok) {
