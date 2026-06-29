@@ -138,8 +138,8 @@ function calculatePeriod(fechaPagoStr) {
     const date = new Date(fechaPagoStr + 'T00:00:00');
     const endDateStr = formatDateDMY(fechaPagoStr);
 
-    // Subtract 6 days
-    date.setDate(date.getDate() - 6);
+    // Subtract 8 days
+    date.setDate(date.getDate() - 7);
 
     const startYear = date.getFullYear();
     const startMonth = String(date.getMonth() + 1).padStart(2, '0');
@@ -151,7 +151,7 @@ function calculatePeriod(fechaPagoStr) {
 
 // Local Database State
 const DB = {
-    getCompany: async function() {
+    getCompany: async function () {
         if (supabaseClient) {
             try {
                 const { data, error } = await supabaseClient
@@ -181,7 +181,7 @@ const DB = {
         }
         return this.getLocalCompany();
     },
-    getLocalCompany: function() {
+    getLocalCompany: function () {
         const defaultCompany = {
             name: "MI EMPRESA S.A. DE C.V.",
             businessName: "MI EMPRESA RAZON SOCIAL",
@@ -194,7 +194,7 @@ const DB = {
         const saved = localStorage.getItem('cfdi_company');
         return saved ? JSON.parse(saved) : defaultCompany;
     },
-    saveCompany: async function(company) {
+    saveCompany: async function (company) {
         this.saveLocalCompany(company); // Backup locally
         if (supabaseClient) {
             try {
@@ -217,10 +217,10 @@ const DB = {
             }
         }
     },
-    saveLocalCompany: function(company) {
+    saveLocalCompany: function (company) {
         localStorage.setItem('cfdi_company', JSON.stringify(company));
     },
-    getEmployees: async function() {
+    getEmployees: async function () {
         if (supabaseClient) {
             try {
                 const { data, error } = await supabaseClient
@@ -249,11 +249,11 @@ const DB = {
         }
         return this.getLocalEmployees();
     },
-    getLocalEmployees: function() {
+    getLocalEmployees: function () {
         const saved = localStorage.getItem('cfdi_employees');
         return saved ? JSON.parse(saved) : [];
     },
-    saveEmployees: async function(employees) {
+    saveEmployees: async function (employees) {
         this.saveLocalEmployees(employees); // Backup locally
         if (supabaseClient) {
             try {
@@ -281,10 +281,10 @@ const DB = {
             }
         }
     },
-    saveLocalEmployees: function(employees) {
+    saveLocalEmployees: function (employees) {
         localStorage.setItem('cfdi_employees', JSON.stringify(employees));
     },
-    getPayrolls: async function() {
+    getPayrolls: async function () {
         if (supabaseClient) {
             try {
                 const { data: batches, error: batchErr } = await supabaseClient
@@ -332,11 +332,11 @@ const DB = {
         }
         return this.getLocalPayrolls();
     },
-    getLocalPayrolls: function() {
+    getLocalPayrolls: function () {
         const saved = localStorage.getItem('cfdi_payrolls');
         return saved ? JSON.parse(saved) : [];
     },
-    savePayrolls: async function(payrolls) {
+    savePayrolls: async function (payrolls) {
         this.saveLocalPayrolls(payrolls); // Backup locally
         if (supabaseClient) {
             try {
@@ -382,7 +382,7 @@ const DB = {
             }
         }
     },
-    saveLocalPayrolls: function(payrolls) {
+    saveLocalPayrolls: function (payrolls) {
         localStorage.setItem('cfdi_payrolls', JSON.stringify(payrolls));
     }
 };
@@ -1041,7 +1041,15 @@ function renderPayrollGrid(isSaved = false) {
                     onchange="updatePayrollDays(${index}, this.value)" 
                     ${isSaved ? 'disabled' : ''}>
             </td>
-            <td id="pago-cell-${index}"><strong>${formatMoney(item.pago)}</strong></td>
+            <td id="pago-cell-${index}">
+                <strong>${formatMoney(item.pago)}</strong>${item.isCustomPago ? '*' : ''}
+                ${!isSaved ? `
+                    <div style="margin-top: 4px; display: flex; gap: 4px; align-items: center; justify-content: center;">
+                        <button class="btn btn-secondary btn-sm" onclick="setDescuentoLibre(${index})" style="padding: 2px 6px; font-size: 0.7rem;" title="Descuento Libre">💸 Ajustar</button>
+                        ${item.isCustomPago ? `<button class="btn btn-danger btn-sm" onclick="resetCalculoPago(${index})" style="padding: 2px 6px; font-size: 0.7rem;" title="Restablecer pago automático">🔄</button>` : ''}
+                    </div>
+                ` : ''}
+            </td>
             <td><code class="text-muted" style="font-size: 0.8rem;">${formatDateDMY(item.fechaPago)}</code></td>
             <td><span style="font-size: 0.8rem; white-space: nowrap;">${item.periodo}</span></td>
             <td><code class="text-muted" style="font-size: 0.75rem;">${item.folioCFDI}</code></td>
@@ -1073,12 +1081,68 @@ window.updatePayrollDays = function (index, value) {
 
     // Update state
     activePayrollList[index].diasTrab = days;
+    activePayrollList[index].isCustomPago = false; // Reset override on manual days change
     activePayrollList[index].pago = parseFloat((activePayrollList[index].sDiario * days).toFixed(2));
 
-    // Update Pago display cell
+    // Re-render row cell
     const cell = document.getElementById(`pago-cell-${index}`);
     if (cell) {
-        cell.innerHTML = `<strong>${formatMoney(activePayrollList[index].pago)}</strong>`;
+        cell.innerHTML = `
+            <strong>${formatMoney(activePayrollList[index].pago)}</strong>
+            <div style="margin-top: 4px; display: flex; gap: 4px; align-items: center; justify-content: center;">
+                <button class="btn btn-secondary btn-sm" onclick="setDescuentoLibre(${index})" style="padding: 2px 6px; font-size: 0.7rem;" title="Descuento Libre">💸 Ajustar</button>
+            </div>
+        `;
+    }
+};
+
+window.setDescuentoLibre = function (index) {
+    const item = activePayrollList[index];
+    if (!item) return;
+
+    const currentPago = item.pago;
+    const value = prompt(`Configurar Pago Libre para ${item.name}\n(Esto omitirá el cálculo automático por días trabajados):\n\nIngrese el monto de pago neto final:`, currentPago);
+
+    if (value === null) return; // user cancelled
+
+    const newPago = parseFloat(value);
+    if (isNaN(newPago) || newPago < 0) {
+        alert("Por favor ingrese un monto numérico válido mayor o igual a 0.");
+        return;
+    }
+
+    item.pago = parseFloat(newPago.toFixed(2));
+    item.isCustomPago = true;
+
+    // Re-render cell display
+    const cell = document.getElementById(`pago-cell-${index}`);
+    if (cell) {
+        cell.innerHTML = `
+            <strong style="color: var(--primary);">${formatMoney(item.pago)}*</strong>
+            <div style="margin-top: 4px; display: flex; gap: 4px; align-items: center; justify-content: center;">
+                <button class="btn btn-secondary btn-sm" onclick="setDescuentoLibre(${index})" style="padding: 2px 6px; font-size: 0.7rem;" title="Descuento Libre">💸 Ajustar</button>
+                <button class="btn btn-danger btn-sm" onclick="resetCalculoPago(${index})" style="padding: 2px 6px; font-size: 0.7rem;" title="Restablecer pago automático">🔄</button>
+            </div>
+        `;
+    }
+};
+
+window.resetCalculoPago = function (index) {
+    const item = activePayrollList[index];
+    if (!item) return;
+
+    item.isCustomPago = false;
+    item.pago = parseFloat((item.sDiario * item.diasTrab).toFixed(2));
+
+    // Re-render cell display
+    const cell = document.getElementById(`pago-cell-${index}`);
+    if (cell) {
+        cell.innerHTML = `
+            <strong>${formatMoney(item.pago)}</strong>
+            <div style="margin-top: 4px; display: flex; gap: 4px; align-items: center; justify-content: center;">
+                <button class="btn btn-secondary btn-sm" onclick="setDescuentoLibre(${index})" style="padding: 2px 6px; font-size: 0.7rem;" title="Descuento Libre">💸 Ajustar</button>
+            </div>
+        `;
     }
 };
 
@@ -1115,6 +1179,27 @@ function initSearchPage() {
         }
         performPeriodSearch(periodSelected);
     });
+
+    // 4. Clear Search
+    const btnClearSearch = document.getElementById('btn-clear-search');
+    if (btnClearSearch) {
+        btnClearSearch.addEventListener('click', () => {
+            document.getElementById('search-folio-input').value = '';
+            document.getElementById('search-rfc-input').value = '';
+            document.getElementById('search-period-select').value = '';
+
+            const folioRes = document.getElementById('folio-result-container');
+            if (folioRes) folioRes.innerHTML = '';
+
+            const rfcRes = document.getElementById('rfc-results-container');
+            if (rfcRes) rfcRes.style.display = 'none';
+
+            const periodRes = document.getElementById('period-results-container');
+            if (periodRes) periodRes.style.display = 'none';
+
+            showToast("Búsqueda Limpiada", "Los campos y resultados de búsqueda han sido restablecidos.");
+        });
+    }
 }
 
 function populatePeriodsDropdown() {
@@ -1629,8 +1714,8 @@ async function refreshAllData() {
 }
 
 async function initSupabaseConnection() {
-    const url ="https://rllxunggbqkqlrpyjzbr.supabase.co";
-    const key ="sb_publishable_bJIadHgZj2SK2tKhxlXbwg_QiThH1FY";
+    const url = "https://rllxunggbqkqlrpyjzbr.supabase.co";
+    const key = "sb_publishable_bJIadHgZj2SK2tKhxlXbwg_QiThH1FY";
     //const url = localStorage.getItem('supabase_url');
     //const key = localStorage.getItem('supabase_key');
     const indicator = document.getElementById('db-status-indicator');
@@ -1756,13 +1841,11 @@ function initSupabaseSettings() {
     if (form) {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const url ="https://rllxunggbqkqlrpyjzbr.supabase.co";
-            const key ="sb_publishable_bJIadHgZj2SK2tKhxlXbwg_QiThH1FY";
-            //const url = urlInput.value.trim();
-            //const key = keyInput.value.trim();
+            const url = urlInput.value.trim();
+            const key = keyInput.value.trim();
 
-            //localStorage.setItem('supabase_url', url);
-           // localStorage.setItem('supabase_key', key);
+            localStorage.setItem('supabase_url', url);
+            localStorage.setItem('supabase_key', key);
 
             const ok = await initSupabaseConnection();
             if (ok) {
@@ -1786,13 +1869,13 @@ function initSupabaseSettings() {
                 localStorage.removeItem('supabase_key');
                 if (urlInput) urlInput.value = '';
                 if (keyInput) keyInput.value = '';
-                
+
                 await initSupabaseConnection();
                 await refreshAllData();
                 renderCompanyHeader();
                 renderEmployeesTable(currentEmployees);
                 populatePeriodsDropdown();
-                
+
                 updateModalUI();
                 closeModal('modal-supabase');
                 showToast("Credenciales Eliminadas", "El sistema ha regresado a Modo Local.");
@@ -1832,7 +1915,7 @@ function initSupabaseSettings() {
                 }
 
                 showToast("Migración Completada", "Todos los datos locales se han subido con éxito a Supabase.");
-                
+
                 await refreshAllData();
                 renderCompanyHeader();
                 renderEmployeesTable(currentEmployees);
